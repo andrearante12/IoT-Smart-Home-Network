@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lumina · Lamp 3</title>
+    <style>
+        :root {
+            --bg: #0f172a;
+            --card-bg: rgba(255, 255, 255, 0.05);
+            --accent: #38bdf8;
+            --warm: #fbbf24;
+            --cool: #60a5fa;
+            --text: #f8fafc;
+            --danger: #ef4444;
+            --success: #10b981;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: var(--bg);
+            background-image: radial-gradient(circle at top right, #1e293b, #0f172a);
+            color: var(--text);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            box-sizing: border-box;
+        }
+
+        h1 { font-weight: 300; letter-spacing: 4px; color: var(--accent); margin-bottom: 30px; }
+
+        .card {
+            background: var(--card-bg);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 24px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 420px;
+            box-sizing: border-box;
+        }
+
+        h2 { margin: 0 0 15px 0; font-size: 1rem; text-transform: uppercase; letter-spacing: 2px; opacity: 0.9; text-align: center; }
+
+        .row { display: flex; gap: 10px; margin-bottom: 20px; }
+
+        button {
+            flex: 1;
+            padding: 12px 16px;
+            border: none;
+            border-radius: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+        }
+
+        .btn-warm { background: var(--warm); color: #451a03; }
+        .btn-cool { background: var(--cool); color: #1e3a8a; }
+        .btn-on { background: var(--success); color: white; }
+        .btn-off { background: var(--danger); color: white; }
+
+        button:hover { filter: brightness(1.1); transform: translateY(-1px); }
+        button:active { transform: translateY(0); }
+
+        .control-group { margin: 20px 0; }
+        .label-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.8rem; opacity: 0.6; }
+
+        .status { font-size: 0.65rem; letter-spacing: 1px; margin-left: 8px; padding: 2px 8px; border-radius: 8px; vertical-align: middle; }
+        .status.on { background: rgba(16, 185, 129, 0.2); color: var(--success); }
+        .status.off { background: rgba(239, 68, 68, 0.2); color: var(--danger); }
+
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 4px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 5px;
+            outline: none;
+        }
+
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 18px;
+            height: 18px;
+            background: var(--accent);
+            border-radius: 50%;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>LUMINA</h1>
+
+    <div class="card">
+        <h2>Lamp 3<span class="status" id="status" hidden></span></h2>
+        <div class="row">
+            <button class="btn-on" onclick="send('state', 'ON')">On</button>
+            <button class="btn-off" onclick="send('state', 'OFF')">Off</button>
+        </div>
+        <div class="row">
+            <button class="btn-cool" onclick="preset(254, 150)">Cool</button>
+            <button class="btn-warm" onclick="preset(254, 500)">Warm</button>
+        </div>
+        <div class="control-group">
+            <div class="label-row"><span>Brightness</span><span id="bri-val">{{ (saved.brightness / 254 * 100)|round|int }}%</span></div>
+            <input type="range" id="bri" min="0" max="254" value="{{ saved.brightness }}"
+                oninput="updateLabel(this.value)"
+                onchange="send('brightness', this.value, 1)">
+        </div>
+        <div class="control-group">
+            <div class="label-row"><span>Tone (Cool to Warm)</span></div>
+            <input type="range" id="temp" min="150" max="500" value="{{ saved.color_temp }}"
+                onchange="send('color_temp', this.value, 1)">
+        </div>
+    </div>
+
+    <script>
+        function send(action, val, trans = 0) {
+            fetch('/control', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ action: action, value: val, transition: trans })
+            });
+        }
+
+        function preset(bri, temp) {
+            const fadeTime = 3;
+            send('state', 'ON');
+            send('brightness', bri, fadeTime);
+            send('color_temp', temp, fadeTime);
+            document.getElementById('bri').value = bri;
+            document.getElementById('temp').value = temp;
+            updateLabel(bri);
+        }
+
+        function updateLabel(val) {
+            const percent = Math.round((val / 254) * 100);
+            document.getElementById('bri-val').innerText = percent + '%';
+        }
+
+        // Don't move a slider out from under someone who just touched it
+        const HOLD_MS = 5000;
+        const touched = {};
+        ['pointerdown', 'input', 'change'].forEach(type => document.addEventListener(type, e => {
+            if (e.target.type === 'range') touched[e.target.id] = Date.now();
+        }));
+
+        function setSlider(elId, val) {
+            if (Date.now() - (touched[elId] || 0) < HOLD_MS) return false;
+            document.getElementById(elId).value = val;
+            return true;
+        }
+
+        function applyState(lamp) {
+            if (setSlider('bri', lamp.brightness)) updateLabel(lamp.brightness);
+            setSlider('temp', lamp.color_temp);
+            const status = document.getElementById('status');
+            status.hidden = !lamp.state;
+            if (lamp.state) {
+                status.innerText = lamp.state;
+                status.className = 'status ' + lamp.state.toLowerCase();
+            }
+        }
+
+        // Keep in sync with the real lamp
+        async function refresh() {
+            if (document.hidden) return;
+            try {
+                const res = await fetch('/state');
+                if (res.ok) applyState(await res.json());
+            } catch (e) {}
+        }
+
+        applyState({{ saved|tojson }});
+        setInterval(refresh, 2000);
+    </script>
+</body>
+</html>

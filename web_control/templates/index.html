@@ -17,7 +17,7 @@
         }
 
         body {
-            font-family: 'Inter', sans-serif;
+            font-family: 'Inter', -apple-system, sans-serif;
             background: var(--bg);
             background-image: radial-gradient(circle at top right, #1e293b, #0f172a);
             color: var(--text);
@@ -28,6 +28,8 @@
             align-items: center;
             min-height: 100vh;
         }
+
+        h1 { font-weight: 300; letter-spacing: 4px; color: var(--accent); margin-bottom: 30px; }
 
         .container {
             display: grid;
@@ -50,7 +52,6 @@
             grid-column: 1 / -1;
             background: rgba(56, 189, 248, 0.1);
             border: 1px solid rgba(56, 189, 248, 0.2);
-            text-align: center;
         }
 
         .button-grid {
@@ -58,14 +59,13 @@
             justify-content: center;
             flex-wrap: wrap;
             gap: 12px;
-            margin-top: 10px;
+            margin-bottom: 25px;
         }
 
-        h1 { font-weight: 300; letter-spacing: 4px; color: var(--accent); margin-bottom: 30px; }
-        h2 { margin: 0 0 15px 0; font-size: 1rem; text-transform: uppercase; letter-spacing: 2px; opacity: 0.9; }
+        h2 { margin: 0 0 15px 0; font-size: 1rem; text-transform: uppercase; letter-spacing: 2px; opacity: 0.9; text-align: center; }
 
         button {
-            padding: 14px 24px;
+            padding: 12px 24px;
             border: none;
             border-radius: 12px;
             font-weight: 600;
@@ -105,6 +105,26 @@
             border-radius: 50%;
             cursor: pointer;
         }
+
+        .group-title {
+            grid-column: 1 / -1;
+            margin: 20px 0 0 0;
+            font-weight: 300;
+            font-size: 0.85rem;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            color: var(--accent);
+            opacity: 0.8;
+        }
+
+        .status { font-size: 0.65rem; letter-spacing: 1px; margin-left: 8px; padding: 2px 8px; border-radius: 8px; vertical-align: middle; }
+        .status.on { background: rgba(16, 185, 129, 0.2); color: var(--success); }
+        .status.off { background: rgba(239, 68, 68, 0.2); color: var(--danger); }
+
+        .global-slider::-webkit-slider-thumb {
+            border: 2px solid white;
+            box-shadow: 0 0 10px var(--accent);
+        }
     </style>
 </head>
 <body>
@@ -112,64 +132,122 @@
     <h1>LUMINA</h1>
 
     <div class="container">
+        <h3 class="group-title">My Room</h3>
         <div class="card all-lamps-card">
-            <h2>All Lamps</h2>
+            <h2>All My Room Lamps</h2>
             <div class="button-grid">
                 <button class="btn-on" onclick="sendAll('state', 'ON')">On</button>
                 <button class="btn-off" onclick="sendAll('state', 'OFF')">Off</button>
                 <button class="btn-cool" onclick="applyToAll(254, 150)">Cool</button>
                 <button class="btn-warm" onclick="applyToAll(254, 500)">Warm</button>
-                <button class="btn-default" onclick="applyToAll(254, 500)">Default</button>
+                <button class="btn-default" onclick="applyPreset(DEFAULT_PRESET)">Default</button>
+            </div>
+
+            <div class="control-group" style="max-width: 600px; margin: 0 auto;">
+                <div class="label-row"><span>Group Brightness</span><span id="global-bri-val">100%</span></div>
+                <input type="range" class="global-slider" id="global-bri" min="0" max="254" value="254" 
+                    oninput="updateGlobalLabel(this.value)" 
+                    onchange="syncAll('brightness', this.value)">
+                
+                <div class="label-row" style="margin-top:15px;"><span>Group Tone (Cool to Warm)</span></div>
+                <input type="range" class="global-slider" id="global-temp" min="150" max="500" value="500" 
+                    onchange="syncAll('color_temp', this.value)">
             </div>
         </div>
 
         <script>
-            [1, 2, 3].forEach(id => {
-                document.write(`
+            // Last known values for each lamp, kept in sync with the real lamps by the server
+            const SAVED = {{ saved|tojson }};
+            const GROUP_1 = [1, 2, 4, 5, 6];
+            const GROUP_2 = [3];
+            const NAMES = {4: 'Workbench Lamp', 5: 'Floor Lamp', 6: 'Reading Lamp'};
+            // Per-lamp [brightness, color_temp] for the Default button
+            const DEFAULT_PRESET = {1: [254, 454], 2: [254, 454], 4: [192, 416], 5: [254, 370], 6: [254, 370]};
+
+            function lampCard(id) {
+                return `
                     <div class="card">
-                        <h2>Lamp ${id}</h2>
+                        <h2>${NAMES[id] || `Lamp ${id}`}<span class="status" id="status-${id}" hidden></span></h2>
                         <div style="display:flex; gap:10px; margin-bottom:20px;">
                             <button class="btn-on" style="flex:1" onclick="send(${id}, 'state', 'ON')">On</button>
                             <button class="btn-off" style="flex:1" onclick="send(${id}, 'state', 'OFF')">Off</button>
                         </div>
                         <div class="control-group">
                             <div class="label-row"><span>Brightness</span><span id="bri-val-${id}">100%</span></div>
-                            <input type="range" id="bri-${id}" min="0" max="254" value="254" oninput="updateLabel(${id}, this.value)" onchange="send(${id}, 'brightness', this.value)">
+                            <input type="range" id="bri-${id}" min="0" max="254" value="${SAVED[id].brightness}" 
+                                oninput="updateLabel(${id}, this.value)" 
+                                onchange="send(${id}, 'brightness', this.value, 1)">
                         </div>
                         <div class="control-group">
-                            <div class="label-row"><span>Cool</span><span>Warm</span></div>
-                            <input type="range" id="temp-${id}" min="150" max="500" value="500" onchange="send(${id}, 'color_temp', this.value)">
+                            <div class="label-row"><span>Tone</span></div>
+                            <input type="range" id="temp-${id}" min="150" max="500" value="${SAVED[id].color_temp}" 
+                                onchange="send(${id}, 'color_temp', this.value, 1)">
                         </div>
                     </div>
-                `);
-            });
+                `;
+            }
+
+            GROUP_1.forEach(id => document.write(lampCard(id)));
+            document.write(`<h3 class="group-title">Group 2 · Lamp 3</h3>`);
+            GROUP_2.forEach(id => document.write(lampCard(id)));
         </script>
     </div>
 
     <script>
-        function send(id, action, val) {
+        // Updated send function to include transition
+        function send(id, action, val, trans = 0) {
             fetch('/control', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({lamp_id: id, action: action, value: val})
+                body: JSON.stringify({
+                    lamp_id: id, 
+                    action: action, 
+                    value: val,
+                    transition: trans
+                })
             });
         }
 
         function sendAll(action, val) {
-            [1, 2, 3].forEach(id => send(id, action, val));
+            GROUP_1.forEach(id => send(id, action, val, 1));
         }
 
+        // Global Sync logic with a smooth 2-second fade
+        function syncAll(action, val) {
+            const fadeTime = 0.5;
+            GROUP_1.forEach(id => {
+                send(id, action, val, fadeTime);
+                if (action === 'brightness') {
+                    document.getElementById(`bri-${id}`).value = val;
+                    updateLabel(id, val);
+                } else if (action === 'color_temp') {
+                    document.getElementById(`temp-${id}`).value = val;
+                }
+            });
+        }
+
+        // Presets with a smooth 3-second fade
         function applyToAll(bri, temp) {
-            [1, 2, 3].forEach(id => {
+            applyPreset(Object.fromEntries(GROUP_1.map(id => [id, [bri, temp]])));
+        }
+
+        function applyPreset(preset) {
+            const fadeTime = 3;
+            GROUP_1.forEach(id => {
+                const [bri, temp] = preset[id];
                 send(id, 'state', 'ON');
-                send(id, 'brightness', bri);
-                send(id, 'color_temp', temp);
+                send(id, 'brightness', bri, fadeTime);
+                send(id, 'color_temp', temp, fadeTime);
                 
-                // Sync UI
                 document.getElementById(`bri-${id}`).value = bri;
                 document.getElementById(`temp-${id}`).value = temp;
                 updateLabel(id, bri);
             });
+            // Group sliders show the average of their lamps
+            const avg = i => Math.round(GROUP_1.reduce((sum, id) => sum + preset[id][i], 0) / GROUP_1.length);
+            document.getElementById('global-bri').value = avg(0);
+            document.getElementById('global-temp').value = avg(1);
+            updateGlobalLabel(avg(0));
         }
 
         function updateLabel(id, val) {
@@ -177,8 +255,56 @@
             document.getElementById(`bri-val-${id}`).innerText = percent + '%';
         }
 
+        function updateGlobalLabel(val) {
+            const percent = Math.round((val / 254) * 100);
+            document.getElementById(`global-bri-val`).innerText = percent + '%';
+        }
+
+        // Don't move a slider out from under someone who just touched it
+        const HOLD_MS = 5000;
+        const touched = {};
+        ['pointerdown', 'input', 'change'].forEach(type => document.addEventListener(type, e => {
+            if (e.target.type === 'range') touched[e.target.id] = Date.now();
+        }));
+
+        function setSlider(elId, val) {
+            if (Date.now() - (touched[elId] || 0) < HOLD_MS) return false;
+            document.getElementById(elId).value = val;
+            return true;
+        }
+
+        function setStatus(id, state) {
+            const el = document.getElementById(`status-${id}`);
+            el.hidden = !state;
+            if (!state) return;
+            el.innerText = state;
+            el.className = 'status ' + state.toLowerCase();
+        }
+
+        function applyState(state) {
+            [...GROUP_1, ...GROUP_2].forEach(id => {
+                const lamp = state[id];
+                if (setSlider(`bri-${id}`, lamp.brightness)) updateLabel(id, lamp.brightness);
+                setSlider(`temp-${id}`, lamp.color_temp);
+                setStatus(id, lamp.state);
+            });
+            // Group sliders show the average of their lamps
+            const avg = key => Math.round(GROUP_1.reduce((sum, id) => sum + Number(state[id][key]), 0) / GROUP_1.length);
+            if (setSlider('global-bri', avg('brightness'))) updateGlobalLabel(avg('brightness'));
+            setSlider('global-temp', avg('color_temp'));
+        }
+
+        async function refresh() {
+            if (document.hidden) return;
+            try {
+                const res = await fetch('/state');
+                if (res.ok) applyState(await res.json());
+            } catch (e) {}
+        }
+
         window.onload = () => {
-            [1, 2, 3].forEach(id => updateLabel(id, 254));
+            applyState(SAVED);
+            setInterval(refresh, 2000);
         };
     </script>
 </body>
