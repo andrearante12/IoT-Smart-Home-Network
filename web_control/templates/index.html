@@ -158,6 +158,11 @@
         <script>
             // Last known values for each lamp, kept in sync with the real lamps by the server
             const SAVED = {{ saved|tojson }};
+            // Current on/off state per lamp, kept up to date by applyState() below.
+            // Used so group-wide controls (brightness/tone sliders) never flip a
+            // lamp's on/off state - they only touch lamps that are already ON.
+            const LAMP_ON = {};
+            for (const id in SAVED) LAMP_ON[id] = SAVED[id].state === 'ON';
             const GROUP_1 = [1, 2, 4, 5, 6];
             const GROUP_2 = [3];
             const NAMES = {4: 'Workbench Lamp', 5: 'Floor Lamp', 6: 'Reading Lamp'};
@@ -196,12 +201,13 @@
     <script>
         // Updated send function to include transition
         function send(id, action, val, trans = 0) {
+            if (action === 'state') LAMP_ON[id] = val === 'ON';
             fetch('/control', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
-                    lamp_id: id, 
-                    action: action, 
+                    lamp_id: id,
+                    action: action,
                     value: val,
                     transition: trans
                 })
@@ -212,10 +218,13 @@
             GROUP_1.forEach(id => send(id, action, val, 1));
         }
 
-        // Global Sync logic with a smooth 2-second fade
+        // Global Sync logic with a smooth 2-second fade.
+        // Only touches lamps that are currently ON, so adjusting the group
+        // brightness/tone sliders never turns an off lamp on (or vice versa).
         function syncAll(action, val) {
             const fadeTime = 0.5;
             GROUP_1.forEach(id => {
+                if (!LAMP_ON[id]) return;
                 send(id, action, val, fadeTime);
                 if (action === 'brightness') {
                     document.getElementById(`bri-${id}`).value = val;
@@ -274,6 +283,7 @@
         }
 
         function setStatus(id, state) {
+            LAMP_ON[id] = state === 'ON';
             const el = document.getElementById(`status-${id}`);
             el.hidden = !state;
             if (!state) return;
